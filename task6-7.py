@@ -1,11 +1,13 @@
 import json
 class ProductionRule:
+
     def __init__(self, rule_id, condition_func, condition_str, result, priority):
         self.id = rule_id
         self.condition_func = condition_func  # Лямбда-функція для перевірки
         self.condition_str = condition_str  # Текстовий опис умови
         self.result = result  # Новий факт чи список фактів
         self.priority = priority  # Пріоритет (P)
+
     def evaluate(self, memory):
         """Перевірка виконання умови правила на поточній робочій пам'яті."""
         try:
@@ -13,18 +15,25 @@ class ProductionRule:
         except KeyError:
             return False
 
+
 class KnowledgeBaseSystem:
+
     def __init__(self):
-        # 1. Початкові факти
+        # 1. Початкові факти (сигнали телеметрії)
         self.initial_facts = set()
-        # 2. Проміжні факти
+
+        # 2. Проміжні факти (агреговані стани)
         self.intermediate_facts = set()
-        # 3. Кінцеві висновки
+
+        # 3. Кінцеві висновки та рекомендації
         self.final_decisions = set()
+
         # 4. Продукційні правила
         self.rules = []
-        # 5. Поточний стан робочої пам'яті
+
+        # 5. Поточний стан робочої пам'яті (ключ -> значення)
         self.working_memory = {}
+
         # Реєстрація визначених категорій фактів для класифікації
         self._init_fact_categories()
         self._init_rules()
@@ -41,6 +50,7 @@ class KnowledgeBaseSystem:
             "network_bottleneck",
             "resource_exhaustion",
         }
+
         self.known_decisions = {
             "check_cooling_system",
             "emergency_shutdown",
@@ -57,6 +67,7 @@ class KnowledgeBaseSystem:
             "check_background_processes",
             "block_ip_and_notify_admin",
         }
+
     def _init_rules(self):
         """Ініціалізація продукційних правил з пріоритетами."""
         self.rules = [
@@ -138,54 +149,36 @@ class KnowledgeBaseSystem:
                 65,
             ),
         ]
-        # Сортування правил за пріоритетом
+        # Сортування правил за пріоритетом (від вищого до нижчого)
         self.rules.sort(key=lambda r: r.priority, reverse=True)
+
     def load_telemetry_facts(self, telemetry_data: dict):
         """Завантаження початкових фактів у робочу пам'ять."""
         self.working_memory.clear()
         self.initial_facts.clear()
         self.intermediate_facts.clear()
         self.final_decisions.clear()
+
         for fact, val in telemetry_data.items():
             if val:
                 self.working_memory[fact] = True
                 self.initial_facts.add(fact)
 
-    def run_inference_engine(self):
-        """Пряме логічне виведення (Forward Chaining) з урахуванням пріоритетів."""
-        executed_rules = set()
-        while True:
-            rule_fired = False
-
-            for rule in self.rules:
-                if rule.id in executed_rules:
-                    continue
-
-                if rule.evaluate(self.working_memory):
-                    # Активація правила
-                    executed_rules.add(rule.id)
-                    rule_fired = True
-                    # Додавання висновків до робочої пам'яті
-                    for fact in rule.result:
-                        self.working_memory[fact] = True
-
-                        if fact in self.known_intermediate:
-                            self.intermediate_facts.add(fact)
-                        elif fact in self.known_decisions:
-                            self.final_decisions.add(fact)
-
-                    # Зупиняємо поточний прохід і повертаємось на початок
-                    break
-            if not rule_fired:
-                break
+    def run_inference_engine(self, verbose: bool = True):
+        """Виклик механізму прямого логічного виведення."""
+        engine = ForwardChainingInferenceEngine(self)
+        return engine.run_from_existing_memory(verbose=verbose)
 
     def display_system_state(self):
         """Відображення окремих структур даних бази знань."""
+        print("=" * 60)
         print("     ПОТОЧНИЙ СТАН СИСТЕМИ ТА РАЗДІЛЬНИХ СТРУКТУР ЗНАНЬ")
-        print(" " * 60)
+        print("=" * 60)
+
         print("\n1. ПОЧАТКОВІ ФАКТИ (Телеметрія):")
         for f in self.initial_facts:
             print(f"   • {f}")
+
         print("\n2. ПРОМІЖНІ ФАКТИ (Агреговані стани):")
         if self.intermediate_facts:
             for f in self.intermediate_facts:
@@ -205,22 +198,107 @@ class KnowledgeBaseSystem:
             print(
                 f"   • [{r.id}] (P={r.priority}) IF {r.condition_str} THEN {r.result}"
             )
+
         print("\n5. ПОВНИЙ ПОТОЧНИЙ СТАН РОБОЧОЇ ПАМ'ЯТІ:")
         print("  ", json.dumps(self.working_memory, indent=4))
+        print("=" * 60)
 
-# ДЕМОНСТРАЦІЯ РОБОТИ ПРОГРАМИ
+
+class ForwardChainingInferenceEngine:
+
+    def __init__(self, knowledge_base: KnowledgeBaseSystem):
+        self.kb = knowledge_base
+
+    def run(self, initial_telemetry: dict, verbose: bool = True):
+        """Завантажує телеметрію та запускає пряме логічне виведення."""
+        self.kb.load_telemetry_facts(initial_telemetry)
+        return self.run_from_existing_memory(verbose=verbose)
+
+    def run_from_existing_memory(self, verbose: bool = True):
+        """Виконання прямого логічного виведення (Forward Chaining)."""
+        executed_rules = set()  # Множина вже активованих правил
+        step = 1
+
+        if verbose:
+            print("=" * 65)
+            print("  ЗАПУСК МЕХАНІЗМУ ПРЯМОГО ЛОГІЧНОГО ВИВЕДЕННЯ (FORWARD CHAINING)")
+            print("=" * 65)
+            print(
+                f"Початкові факти телеметрії: {list(self.kb.initial_facts)}\n"
+            )
+
+        # Потоковий цикл прямого виведення
+        while True:
+            conflict_set = []  # Множина конфліктних правил, умови яких виконуються
+
+            # Аналіз фактів та визначення застосовних правил
+            for rule in self.kb.rules:
+                if rule.id in executed_rules:
+                    continue  # Запобігання повторному спрацьовуванню
+
+                if rule.evaluate(self.kb.working_memory):
+                    conflict_set.append(rule)
+
+            # Перевірка умови зупинки
+            if not conflict_set:
+                if verbose:
+                    print(
+                        "-> [УМОВА ЗУПИНКИ]: Жодне нове правило не може бути застосоване."
+                    )
+                break
+
+            # Вирішення конфліктів (правило з max пріоритетом)
+            active_rule = conflict_set[0]
+            # Активація правила та оновлення робочої пам'яті
+            executed_rules.add(active_rule.id)
+            new_facts_added = []
+            for fact in active_rule.result:
+                if not self.kb.working_memory.get(fact, False):
+                    self.kb.working_memory[fact] = True
+                    new_facts_added.append(fact)
+
+                    # Класифікація висновку
+                    if fact in self.kb.known_intermediate:
+                        self.kb.intermediate_facts.add(fact)
+                    elif fact in self.kb.known_decisions:
+                        self.kb.final_decisions.add(fact)
+
+            if verbose:
+                print(f"[Крок {step}] Активовано правило: {active_rule.id}")
+                print(f"        Умова:  IF {active_rule.condition_str}")
+                print(
+                    f"        Висновок: THEN {active_rule.result} (Пріоритет: {active_rule.priority})"
+                )
+                print(f"        Нові факти в пам'яті: {new_facts_added}")
+                print("-" * 65)
+
+            step += 1
+
+        if verbose:
+            print("\nРЕЗУЛЬТАТИ ВИВЕДЕННЯ:")
+            print(
+                f"• Згенеровані проміжні факти: {list(self.kb.intermediate_facts)}"
+            )
+            print(
+                f"• Фінальні рішення / рекомендації: {list(self.kb.final_decisions)}"
+            )
+            print("=" * 65)
+
+        return self.kb.final_decisions
+
+
+# ДЕМОНСТРАЦІЯ РОБОТИ
 if __name__ == "__main__":
     kb = KnowledgeBaseSystem()
-    # Початковий набір вхідних фактів для багатокрокового виведення
+    engine = ForwardChainingInferenceEngine(kb)
+    # Вхідні дані телеметрії
     input_telemetry = {
         "bsod_occurred": True,
         "ram_usage_high": True,
         "cpu_load_high": True,
         "backup_created": False,
     }
-    print("Завантаження вхідної телеметрії...")
-    kb.load_telemetry_facts(input_telemetry)
-    print("Запуск машинно-логічного виведення (Forward Chaining)...")
-    kb.run_inference_engine()
-    # Вивід результатів
+    # Виконання виведення
+    engine.run(input_telemetry, verbose=True)
+    # Відображення підсумкового стану бази знань
     kb.display_system_state()
