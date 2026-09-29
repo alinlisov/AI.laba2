@@ -302,3 +302,6 @@ if __name__ == "__main__":
     engine.run(input_telemetry, verbose=True)
     # Відображення підсумкового стану бази знань
     kb.display_system_state()
+
+
+
