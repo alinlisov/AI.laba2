@@ -1,5 +1,5 @@
-import json
 class ProductionRule:
+
     def __init__(self, rule_id, condition_func, condition_str, result, priority):
         self.id = rule_id
         self.condition_func = condition_func
@@ -13,14 +13,16 @@ class ProductionRule:
         except KeyError:
             return False
 
+
 class KnowledgeBaseSystem:
+
     def __init__(self):
         self.initial_facts = set()
         self.intermediate_facts = set()
         self.final_decisions = set()
         self.rules = []
         self.working_memory = {}
-        # Довідник усіх доступних входів телеметрії
+
         self.available_telemetry = {
             "1": ("cpu_temp_high", "Висока температура процесора (CPU)"),
             "2": ("fan_speed_low", "Низькі оберти вентилятора"),
@@ -29,11 +31,12 @@ class KnowledgeBaseSystem:
             "5": ("cpu_load_high", "Високе завантаження процесора (CPU Load)"),
             "6": ("drive_smart_bad", "Помилки диска в SMART"),
             "7": ("read_write_errors", "Помилки читання/запису на накопичувач"),
-            "8": ("backup_created", "Резервна копія створення успішно"),
+            "8": ("backup_created", "Резервна копія створена успішно"),
         }
 
         self._init_fact_categories()
         self._init_rules()
+
     def _init_fact_categories(self):
         self.known_intermediate = {
             "fan_failure",
@@ -50,7 +53,9 @@ class KnowledgeBaseSystem:
             "migrate_services",
             "immediate_backup",
             "replace_drive",
+            "replace_thermal_paste",
         }
+
     def _init_rules(self):
         self.rules = [
             ProductionRule(
@@ -59,6 +64,14 @@ class KnowledgeBaseSystem:
                 "cpu_temp_high AND fan_speed_low",
                 ["fan_failure"],
                 85,
+            ),
+            ProductionRule(
+                "R2",
+                lambda m: m.get("cpu_temp_high")
+                and not m.get("fan_speed_low"),
+                "cpu_temp_high AND NOT fan_speed_low",
+                ["thermal_paste_degradation"],
+                70,
             ),
             ProductionRule(
                 "R3",
@@ -76,6 +89,14 @@ class KnowledgeBaseSystem:
                 85,
             ),
             ProductionRule(
+                "R5",
+                lambda m: m.get("drive_smart_bad")
+                or m.get("read_write_errors"),
+                "drive_smart_bad OR read_write_errors",
+                ["storage_degradation"],
+                90,
+            ),
+            ProductionRule(
                 "R9",
                 lambda m: m.get("fan_failure") and m.get("cpu_load_high"),
                 "fan_failure AND cpu_load_high",
@@ -83,11 +104,33 @@ class KnowledgeBaseSystem:
                 100,
             ),
             ProductionRule(
+                "R10",
+                lambda m: m.get("storage_degradation")
+                and not m.get("backup_created"),
+                "storage_degradation AND NOT backup_created",
+                ["immediate_backup", "replace_drive"],
+                95,
+            ),
+            ProductionRule(
                 "R11",
                 lambda m: m.get("memory_fault") and m.get("cpu_load_high"),
                 "memory_fault AND cpu_load_high",
                 ["isolate_node", "migrate_services"],
                 90,
+            ),
+            ProductionRule(
+                "R12",
+                lambda m: m.get("fan_failure"),
+                "fan_failure",
+                ["check_cooling_system"],
+                70,
+            ),
+            ProductionRule(
+                "R13",
+                lambda m: m.get("thermal_paste_degradation"),
+                "thermal_paste_degradation",
+                ["replace_thermal_paste"],
+                65,
             ),
             ProductionRule(
                 "R14",
@@ -104,6 +147,7 @@ class KnowledgeBaseSystem:
         self.initial_facts.clear()
         self.intermediate_facts.clear()
         self.final_decisions.clear()
+
         for fact, val in telemetry_data.items():
             if val:
                 self.working_memory[fact] = True
@@ -111,9 +155,11 @@ class KnowledgeBaseSystem:
 
 
 class InferenceEngineWithUI:
+
     def __init__(self, kb: KnowledgeBaseSystem):
         self.kb = kb
         self.explanation_trace = []
+
     def run_inference(self):
         self.explanation_trace.clear()
         executed_rules = set()
@@ -126,8 +172,10 @@ class InferenceEngineWithUI:
                     continue
                 if rule.evaluate(self.kb.working_memory):
                     conflict_set.append(rule)
+
             if not conflict_set:
                 break
+
             active_rule = conflict_set[0]
             executed_rules.add(active_rule.id)
 
@@ -154,21 +202,25 @@ class InferenceEngineWithUI:
             )
             step += 1
 
+
 class ExpertSystemUI:
-    """Клас текстового користувацького інтерфейсу (CLI)."""
+
     def __init__(self):
         self.kb = KnowledgeBaseSystem()
         self.engine = InferenceEngineWithUI(self.kb)
+
     def display_header(self):
         print("\n" + "=" * 70)
         print("    ЕКСПЕРТНА СИСТЕМА ДІАГНОСТИКИ СЕРВЕРНОГО ОБЛАДНАННЯ")
         print("=" * 70)
+
     def select_initial_facts(self) -> dict:
-        """Введення/вибір початкових фактів користувачем."""
         print("\n[Крок 1] Оберіть наявні симптоми/сигнали телеметрії:")
         print("-" * 50)
+
         for key, (fact_code, description) in self.kb.available_telemetry.items():
             print(f"  [{key}] {description} ({fact_code})")
+
         print("-" * 50)
         user_input = input(
             "Введіть номери обраних симптомів через кому (наприклад, 1,2,5): "
@@ -176,16 +228,17 @@ class ExpertSystemUI:
 
         selected_keys = [k.strip() for k in user_input.split(",") if k.strip()]
         selected_telemetry = {}
+
         for key, (fact_code, _) in self.kb.available_telemetry.items():
             selected_telemetry[fact_code] = key in selected_keys
+
         return selected_telemetry
 
     def render_results(self):
-        """Відображення сформованих рішень та ланцюжка виведення."""
         print("\n" + "=" * 70)
         print("                    РЕЗУЛЬТАТИ ДІАГНОСТИКИ")
         print("=" * 70)
-        # 1. Відображення початкових фактів
+
         print("\n1. ОБРАНІ ПОЧАТКОВІ ФАКТИ:")
         if self.kb.initial_facts:
             for f in self.kb.initial_facts:
@@ -193,7 +246,6 @@ class ExpertSystemUI:
         else:
             print("   (жодного факту не обрано)")
 
-        # 2. Відображення ланцюжка логічного виведення
         print("\n2. ЛАНЦЮЖОК ЛОГІЧНОГО ВИВЕДЕННЯ (ТРАСУВАННЯ):")
         if self.engine.explanation_trace:
             for step in self.engine.explanation_trace:
@@ -206,7 +258,7 @@ class ExpertSystemUI:
                 print("   " + "-" * 45)
         else:
             print("   (ланцюжок порожній — жодне правило не спрацювало)")
-        # 3. Відображення сформованого рішення або рекомендації
+
         print("\n3. СФОРМОВАНІ РІШЕННЯ ТА РЕКОМЕНДАЦІЇ:")
         if self.kb.final_decisions:
             for decision in self.kb.final_decisions:
@@ -215,23 +267,25 @@ class ExpertSystemUI:
             print("   [i] Критичних відхилень не виявлено або недостатньо даних.")
 
         print("=" * 70)
+
     def start_session(self):
-        """Головний інтерактивний цикл консольного інтерфейсу."""
         while True:
             self.display_header()
             print("\nГОЛОВНЕ МЕНЮ:")
             print("  1. Запустити нову діагностику")
             print("  2. Вийти з системи")
+
             choice = input("\nОберіть дію (1-2): ").strip()
+
             if choice == "1":
-                # 1. Введення/вибір початкових фактів
                 telemetry_data = self.select_initial_facts()
                 self.kb.load_telemetry_facts(telemetry_data)
-                # 2. Запуск механізму логічного виведення
+
                 print("\n[...] Виконується логічне виведення (Forward Chaining)...")
                 self.engine.run_inference()
-                # 3 & 4. Відображення результатів та ланцюжка
+
                 self.render_results()
+
                 input("\nНатисніть Enter, щоб повернутися в меню...")
             elif choice == "2":
                 print("\nЗавершення роботи системи. До побачення!")
@@ -239,7 +293,7 @@ class ExpertSystemUI:
             else:
                 print("\n[!] Некоректний вибір. Спробуйте ще раз.")
 
-# ЗАПУСК
+
 if __name__ == "__main__":
     ui = ExpertSystemUI()
     ui.start_session()
